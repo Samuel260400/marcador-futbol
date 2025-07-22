@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Display Partido</title>
+<style>
+  :root{
+    --bg:#bfe8ff; --fg:#111; --accent:rgba(255,255,255,.28);
+    --font:system-ui,sans-serif;
+    --score-font:7vw; --team-font:2.6vw; --clock-font:6vw; --phase-font:2.4vw;
+    --countdown-num:5vw; --countdown-label:1.4vw; --go-msg-font:6vw;
+    --gap-main:4.5vh; --radius:.25em; --blur:4px;
+  }
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:var(--font);}
+  .layout{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--gap-main);text-align:center;padding:3vh 3vw;box-sizing:border-box;}
+  .phase{font-size:var(--phase-font);opacity:.85;letter-spacing:.06em;text-transform:uppercase;}
+
+  /* PRE countdown */
+  #preWrap{display:none;flex-direction:row;gap:4vw;align-items:flex-start;justify-content:center;flex-wrap:wrap;}
+  .pre-block{min-width:12vw;display:flex;flex-direction:column;align-items:center;}
+  .pre-num{font-size:var(--countdown-num);font-weight:700;line-height:1;padding:.25em .35em;background:var(--accent);border-radius:.2em;backdrop-filter:blur(var(--blur));}
+  .pre-lab{margin-top:.6vh;font-size:var(--countdown-label);opacity:.7;letter-spacing:.08em;text-transform:uppercase;}
+  .go-msg{font-size:var(--go-msg-font);font-weight:800;display:none;}
+
+  /* Scoreboard */
+  .scoreboard{width:100%;display:flex;justify-content:space-between;align-items:center;gap:2vw;}
+  .team{flex:1;display:flex;flex-direction:column;align-items:center;gap:1vh;}
+  .team-logo{width:12vw;max-width:180px;aspect-ratio:1/1;object-fit:contain;margin-bottom:1vh;filter:drop-shadow(0 0 4px rgba(0,0,0,.2));}
+  .team-name{font-size:var(--team-font);font-weight:600;letter-spacing:.04em;opacity:.9;}
+  .score{font-size:var(--score-font);font-weight:700;line-height:1;padding:.2em .3em;background:var(--accent);border-radius:var(--radius);backdrop-filter:blur(var(--blur));min-width:12vw;}
+  .divider{font-size:var(--score-font);line-height:1;font-weight:700;opacity:.5;}
+
+  /* Clocks */
+  .clock{font-size:var(--clock-font);font-weight:700;padding:.25em .4em;border-radius:.18em;background:var(--accent);display:inline-block;backdrop-filter:blur(var(--blur));}
+  .countup{font-size:4.6vw;font-weight:600;opacity:.85;display:none;}
+  .ended{font-size:4vw;font-weight:700;display:none;}
+
+  @media(max-width:768px){
+    :root{--score-font:12vw;--team-font:4.8vw;--clock-font:12vw;--phase-font:4.8vw;--countdown-num:12vw;--countdown-label:3.5vw;--go-msg-font:12vw;}
+    .team-logo{width:24vw;max-width:none;}
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <div class="phase" id="phase"></div>
+
+  <div id="preWrap">
+    <div class="pre-block"><div class="pre-num" id="preDays">00</div><div class="pre-lab">Días</div></div>
+    <div class="pre-block"><div class="pre-num" id="preHours">00</div><div class="pre-lab">Horas</div></div>
+    <div class="pre-block"><div class="pre-num" id="preMins">00</div><div class="pre-lab">Min</div></div>
+    <div class="pre-block"><div class="pre-num" id="preSecs">00</div><div class="pre-lab">Seg</div></div>
+  </div>
+
+  <div class="go-msg" id="goMsg">¡A JUGAR!</div>
+
+  <div class="scoreboard">
+    <div class="team">
+      <img id="home-logo" class="team-logo" alt="logo local">
+      <div class="team-name" id="home-name"></div>
+      <div class="score" id="home-score">0</div>
+    </div>
+    <div class="divider">–</div>
+    <div class="team">
+      <img id="away-logo" class="team-logo" alt="logo visitante">
+      <div class="team-name" id="away-name"></div>
+      <div class="score" id="away-score">0</div>
+    </div>
+  </div>
+
+  <div class="clock" id="clock">00:00</div>
+  <div class="countup" id="countup">00:00</div>
+  <div class="ended" id="ended">Fin del partido</div>
+</div>
+
+<script>
+const DEBUG=false; const log=(...a)=>{ if(DEBUG) console.log(...a); };
+const AUTO_START_AFTER_PRE=true;
+const GO_MSG_DURATION=3000;
+const DUR={'1H':2700,'2H':2700,'PRORROGA1':900,'PRORROGA2':900,'PENALTIS':0};
+
+const state={
+  homeName:'Local',awayName:'Visitante',homeScore:0,awayScore:0,
+  homeLogo: localStorage.getItem('match_homeLogo') || '',
+  awayLogo: localStorage.getItem('match_awayLogo') || '',
+  phase:'PRE',secondsLeft:DUR['1H'],running:false,
+  startTimestamp:null,
+  countUpEnabled:false,countUpRunning:false,countUpSeconds:0
+};
+
+const pad=n=>String(n).padStart(2,'0');
+const faseTexto=p=>({PRE:'Comienza en','1H':'1ª Parte',DESCANSO:'Descanso','2H':'2ª Parte',PRORROGA1:'Prórroga 1ª',PRORROGA2:'Prórroga 2ª',PENALTIS:'Penaltis',FIN:'Final'})[p]||p;
+
+const phaseEl=document.getElementById('phase');
+const preWrap=document.getElementById('preWrap');
+const dEl=document.getElementById('preDays');
+const hEl=document.getElementById('preHours');
+const mEl=document.getElementById('preMins');
+const sEl=document.getElementById('preSecs');
+const goMsgEl=document.getElementById('goMsg');
+const hNameEl=document.getElementById('home-name');
+const aNameEl=document.getElementById('away-name');
+const hScoreEl=document.getElementById('home-score');
+const aScoreEl=document.getElementById('away-score');
+const homeLogoEl=document.getElementById('home-logo');
+const awayLogoEl=document.getElementById('away-logo');
+const clockEl=document.getElementById('clock');
+const countupEl=document.getElementById('countup');
+const endedEl=document.getElementById('ended');
+
+function setLogo(imgEl,url){ imgEl.src = url || ''; }
+
+function renderStatic(){
+  hNameEl.textContent=state.homeName;
+  aNameEl.textContent=state.awayName;
+  hScoreEl.textContent=state.homeScore;
+  aScoreEl.textContent=state.awayScore;
+  phaseEl.textContent=faseTexto(state.phase);
+
+  setLogo(homeLogoEl,state.homeLogo);
+  setLogo(awayLogoEl,state.awayLogo);
+
+  const showPre = state.phase==='PRE' && state.startTimestamp && state.startTimestamp>Date.now();
+  preWrap.style.display = showPre ? 'flex' : 'none';
+
+  countupEl.style.display = state.countUpEnabled ? 'block' : 'none';
+  clockEl.style.display   = (state.phase!=='PRE' && state.phase!=='FIN' && state.phase!=='PENALTIS') ? '' : 'none';
+  endedEl.style.display   = state.phase==='FIN' ? '' : 'none';
+
+  clockEl.textContent  = pad(Math.floor(state.secondsLeft/60))+':'+pad(state.secondsLeft%60);
+  countupEl.textContent= pad(Math.floor(state.countUpSeconds/60))+':'+pad(state.countUpSeconds%60);
+}
+function paintPre(ms){
+  let s=Math.max(0,Math.floor(ms/1000));
+  const d=Math.floor(s/86400); s%=86400;
+  const h=Math.floor(s/3600);  s%=3600;
+  const m=Math.floor(s/60); const sec=s%60;
+  dEl.textContent=pad(d); hEl.textContent=pad(h); mEl.textContent=pad(m); sEl.textContent=pad(sec);
+}
+renderStatic();
+
+setInterval(()=>{
+  const now=Date.now();
+  if(state.phase==='PRE' && state.startTimestamp){
+    const diff=state.startTimestamp-now;
+    if(diff<=0){
+      preWrap.style.display='none';
+      goMsgEl.style.display='';
+      setTimeout(()=>goMsgEl.style.display='none',GO_MSG_DURATION);
+      state.startTimestamp=null;
+      if(AUTO_START_AFTER_PRE){
+        state.phase='1H'; state.secondsLeft=DUR['1H']; state.running=true;
+      }
+      renderStatic();
+    }else{ paintPre(diff); }
+  }
+  if(state.running && state.phase!=='PRE' && state.phase!=='FIN' && state.phase!=='PENALTIS'){
+    state.secondsLeft=Math.max(0,state.secondsLeft-1);
+    if(state.secondsLeft===0) state.running=false;
+    clockEl.textContent = pad(Math.floor(state.secondsLeft/60))+':'+pad(state.secondsLeft%60);
+  }
+  if(state.countUpEnabled && state.countUpRunning){
+    state.countUpSeconds++;
+    countupEl.textContent= pad(Math.floor(state.countUpSeconds/60))+':'+pad(state.countUpSeconds%60);
+  }
+},1000);
+
+function handle(type,payload){
+  switch(type){
+    case 'SET_NAMES': state.homeName=payload.home; state.awayName=payload.away; break;
+    case 'SET_LOGOS':
+      state.homeLogo=payload.homeLogo||'';
+      state.awayLogo=payload.awayLogo||'';
+      if(state.homeLogo.length<500000) localStorage.setItem('match_homeLogo',state.homeLogo);
+      if(state.awayLogo.length<500000) localStorage.setItem('match_awayLogo',state.awayLogo);
+      break;
+    case 'GOAL':
+      if(payload.team==='home') state.homeScore=Math.max(0,state.homeScore+payload.delta);
+      else state.awayScore=Math.max(0,state.awayScore+payload.delta);
+      break;
+
+    case 'PHASE_SET':
+      // cambiar sólo la fase; NO tocar tiempo si es prórroga (sumará control)
+      state.phase = payload.phase;
+      if(DUR[payload.phase]!==undefined && payload.phase!=='PRORROGA1' && payload.phase!=='PRORROGA2'){
+        state.secondsLeft = DUR[payload.phase];
+      }
+      if(state.phase==='FIN') state.running=false;
+      localStorage.setItem('match_phase', state.phase);
+      break;
+
+    case 'TIME_ADD': state.secondsLeft=Math.max(0,state.secondsLeft+payload.seconds); break;
+    case 'TIME_SET': state.secondsLeft=Math.max(0,payload.seconds); break;
+    case 'RUNNING_SET': state.running=payload.running; break;
+    case 'RESET_ALL':
+      Object.assign(state,{
+        homeScore:0,awayScore:0,homeLogo:'',awayLogo:'',
+        phase:'1H',secondsLeft:DUR['1H'],running:false,
+        startTimestamp:null,countUpEnabled:false,countUpRunning:false,countUpSeconds:0
+      });
+      localStorage.removeItem('match_pre_ts');
+      localStorage.removeItem('match_homeLogo');
+      localStorage.removeItem('match_awayLogo');
+      break;
+
+    case 'PRESET_START':
+      state.startTimestamp=payload.ts;
+      if(state.startTimestamp>Date.now()){
+        state.phase='PRE';
+        paintPre(state.startTimestamp-Date.now());
+        localStorage.setItem('match_pre_ts', String(state.startTimestamp));
+        localStorage.setItem('match_phase','PRE');
+      }else{
+        state.startTimestamp=null;
+        localStorage.removeItem('match_pre_ts');
+      }
+      break;
+    case 'PRE_ADD':
+      if(state.startTimestamp){
+        state.startTimestamp+=payload.ms;
+        localStorage.setItem('match_pre_ts', String(state.startTimestamp));
+      }
+      break;
+
+    // Count up
+    case 'COUNTUP_ENABLE':
+      state.countUpEnabled = payload.enable;
+      if(!state.countUpEnabled){ state.countUpRunning=false; state.countUpSeconds=0; }
+      break;
+    case 'COUNTUP_RUN':
+      if(state.countUpEnabled){ state.countUpRunning = payload.run; }
+      break;
+    case 'COUNTUP_RESET':
+      state.countUpSeconds=0;
+      break;
+  }
+  renderStatic();
+}
+
+// BroadcastChannel
+try{
+  const bc=new BroadcastChannel('match-control');
+  bc.onmessage=({data})=>{ log('BC',data); handle(data.type,data.payload); };
+}catch(e){ log('BC no disponible',e); }
+
+// localStorage fallback
+window.addEventListener('storage',e=>{
+  if(e.key==='match_pre_ts'){
+    const ts=Number(localStorage.getItem('match_pre_ts')||0);
+    if(ts && ts>Date.now()){ state.startTimestamp=ts; state.phase='PRE'; paintPre(ts-Date.now()); }
+  }
+  if(e.key==='match_phase'){
+    const ph=localStorage.getItem('match_phase'); if(ph){ state.phase=ph; }
+  }
+  if(e.key==='match_homeLogo' || e.key==='match_awayLogo'){
+    state.homeLogo = localStorage.getItem('match_homeLogo') || '';
+    state.awayLogo = localStorage.getItem('match_awayLogo') || '';
+  }
+  renderStatic();
+});
+</script>
+</body>
+</html>

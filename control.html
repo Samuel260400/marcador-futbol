@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Control Partido</title>
+<style>
+  body{margin:0;font-family:system-ui,sans-serif;background:#f5f5f5;color:#111;padding:2rem;box-sizing:border-box;}
+  fieldset{border:1px solid #ccc;border-radius:.5rem;margin-bottom:1.5rem;padding:1rem 1.2rem;}
+  legend{padding:0 .4rem;font-weight:600;}
+  .row{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin:.4rem 0;}
+  label{font-size:.9rem;opacity:.8;}
+  input[type="text"],input[type="number"],input[type="datetime-local"]{font:inherit;padding:.35rem .5rem;border:1px solid #bbb;border-radius:.3rem;}
+  button{font:inherit;cursor:pointer;border:0;border-radius:.4rem;padding:.45rem .9rem;background:#1976d2;color:#fff;transition:opacity .15s;}
+  button:hover{opacity:.85;}
+  .btn-red{background:#c62828;}
+  .btn-green{background:#388e3c;}
+  .btn-gray{background:#757575;}
+  .spacer{flex:1 0 auto;}
+</style>
+</head>
+<body>
+<h1>Control del partido</h1>
+
+<fieldset>
+  <legend>Equipos / Logos</legend>
+  <div class="row">
+    <label>Local</label><input id="homeName" type="text" placeholder="Local" />
+    <label>Visitante</label><input id="awayName" type="text" placeholder="Visitante" />
+    <button type="button" id="setNames" class="btn-green">Aplicar</button>
+  </div>
+  <div class="row">
+    <label>Logo Local (URL)</label><input id="homeLogo" type="text" placeholder="https://..." style="min-width:18rem" />
+    <label>Logo Visitante (URL)</label><input id="awayLogo" type="text" placeholder="https://..." style="min-width:18rem" />
+    <button type="button" id="setLogos" class="btn-green">Aplicar logos</button>
+  </div>
+  <div class="row">
+    <label>Logo Local (archivo)</label><input id="homeFile" type="file" accept="image/*">
+    <label>Logo Visitante (archivo)</label><input id="awayFile" type="file" accept="image/*">
+    <button type="button" id="uploadLogos" class="btn-green">Cargar ficheros</button>
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend>Marcador</legend>
+  <div class="row">
+    <button data-team="home" data-delta="1">Local +1</button>
+    <button data-team="home" data-delta="-1" class="btn-gray">Local -1</button>
+    <div class="spacer"></div>
+    <button data-team="away" data-delta="1">Visitante +1</button>
+    <button data-team="away" data-delta="-1" class="btn-gray">Visitante -1</button>
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend>Cuenta atrás inicio</legend>
+  <div class="row">
+    <label>Fecha/Hora inicio</label>
+    <input id="startDT" type="datetime-local" />
+    <button type="button" id="btnPrevia" class="btn-green">Previa (mostrar bloques)</button>
+  </div>
+  <div class="row">
+    <button data-pre="600000">+10m</button>
+    <button data-pre="-600000" class="btn-gray">-10m</button>
+    <button data-pre="60000">+1m</button>
+    <button data-pre="-60000" class="btn-gray">-1m</button>
+    <button data-pre="10000">+10s</button>
+    <button data-pre="-10000" class="btn-gray">-10s</button>
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend>Tiempo de fase</legend>
+  <div class="row">
+    <button data-sec="3600">+1h</button>
+    <button data-sec="-3600" class="btn-gray">-1h</button>
+    <button data-sec="300">+5m</button>
+    <button data-sec="-300" class="btn-gray">-5m</button>
+    <button data-sec="60">+1m</button>
+    <button data-sec="-60" class="btn-gray">-1m</button>
+    <button data-sec="10">+10s</button>
+    <button data-sec="-10" class="btn-gray">-10s</button>
+  </div>
+  <div class="row">
+    <label for="setMinutes">Min:</label>
+    <input id="setMinutes" type="number" min="0" value="45" style="width:5rem" />
+    <label for="setSeconds">Seg:</label>
+    <input id="setSeconds" type="number" min="0" max="59" value="0" style="width:5rem"/>
+    <button type="button" id="applyTime" class="btn-green">Establecer</button>
+  </div>
+  <div class="row">
+    <button type="button" id="runToggle" class="btn-green">Pausar</button>
+    <button type="button" id="resetAll" class="btn-red">Reset Total</button>
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend>Fases</legend>
+  <div class="row">
+    <button data-phase="1H">1ª Parte</button>
+    <button data-phase="DESCANSO" class="btn-gray">Descanso</button>
+    <button data-phase="2H">2ª Parte</button>
+    <button data-phase="PRORROGA1">Prórroga 1ª (+15m)</button>
+    <button data-phase="PRORROGA2">Prórroga 2ª (+15m)</button>
+    <button data-phase="PENALTIS">Penaltis</button>
+    <button data-phase="FIN" class="btn-red">Final</button>
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend>Cronómetro (cuenta adelante)</legend>
+  <div class="row" style="gap:1rem 0.6rem;">
+    <button type="button" id="countupOn"  class="btn-green">Activar</button>
+    <button type="button" id="countupOff" class="btn-gray">Desactivar</button>
+    <button type="button" id="countupStart" class="btn-green">Start</button>
+    <button type="button" id="countupStop"  class="btn-gray">Stop</button>
+    <button type="button" id="countupReset" class="btn-red">Reset</button>
+    <div class="spacer"></div>
+    <button type="button" id="countupToggle" class="btn-green">Start ↑</button>
+  </div>
+</fieldset>
+
+<script>
+document.addEventListener('DOMContentLoaded',()=>{
+
+  const channel = (()=>{ try{ return new BroadcastChannel('match-control'); }catch(e){ return null; } })();
+  const send = (type,payload)=>{
+    if(channel) channel.postMessage({type,payload});
+    // espejo localStorage
+    if(type==='PRESET_START') localStorage.setItem('match_pre_ts', String(payload.ts));
+    if(type==='PRE_ADD'){ const prev=Number(localStorage.getItem('match_pre_ts')||0); localStorage.setItem('match_pre_ts', String(prev+payload.ms)); }
+    if(type==='PHASE_SET') localStorage.setItem('match_phase', payload.phase);
+    if(type==='SET_LOGOS'){
+      if((payload.homeLogo||'').length<500000) localStorage.setItem('match_homeLogo', payload.homeLogo||'');
+      if((payload.awayLogo||'').length<500000) localStorage.setItem('match_awayLogo', payload.awayLogo||'');
+    }
+    if(type==='RESET_ALL'){
+      localStorage.removeItem('match_pre_ts');
+      localStorage.removeItem('match_homeLogo');
+      localStorage.removeItem('match_awayLogo');
+      localStorage.setItem('match_phase','1H');
+    }
+  };
+
+  // Equipos
+  document.getElementById('setNames').addEventListener('click',()=>{
+    const home=document.getElementById('homeName').value||'Local';
+    const away=document.getElementById('awayName').value||'Visitante';
+    send('SET_NAMES',{home,away});
+  });
+
+  // Logos URL
+  document.getElementById('setLogos').addEventListener('click',()=>{
+    const homeLogo=document.getElementById('homeLogo').value.trim();
+    const awayLogo=document.getElementById('awayLogo').value.trim();
+    send('SET_LOGOS',{homeLogo,awayLogo});
+  });
+
+  // Logos file -> base64
+  document.getElementById('uploadLogos').addEventListener('click',()=>{
+    const read = f => new Promise(res=>{
+      if(!f) return res('');
+      const r=new FileReader();
+      r.onload=()=>res(r.result);
+      r.readAsDataURL(f);
+    });
+    Promise.all([
+      read(document.getElementById('homeFile').files[0]),
+      read(document.getElementById('awayFile').files[0])
+    ]).then(([homeLogo,awayLogo])=>{
+      send('SET_LOGOS',{homeLogo,awayLogo});
+    });
+  });
+
+  // Marcador
+  document.querySelectorAll('[data-team]').forEach(btn=>{
+    btn.addEventListener('click',()=>send('GOAL',{team:btn.dataset.team,delta:Number(btn.dataset.delta)}));
+  });
+
+  // Previa
+  const startDT=document.getElementById('startDT');
+  document.getElementById('btnPrevia').addEventListener('click',()=>{
+    if(!startDT.value){ alert('Pon fecha y hora para la previa'); return; }
+    const ts=new Date(startDT.value).getTime();
+    if(isNaN(ts) || ts<=Date.now()){ alert('Hora pasada o inválida'); return; }
+    send('PRESET_START',{ts});
+    send('PHASE_SET',{phase:'PRE'});
+  });
+
+  // Ajustes previa
+  document.querySelectorAll('[data-pre]').forEach(btn=>{
+    btn.addEventListener('click',()=>send('PRE_ADD',{ms:Number(btn.dataset.pre)}));
+  });
+
+  // Tiempo fase
+  document.querySelectorAll('[data-sec]').forEach(btn=>{
+    btn.addEventListener('click',()=>send('TIME_ADD',{seconds:Number(btn.dataset.sec)}));
+  });
+  document.getElementById('applyTime').addEventListener('click',()=>{
+    const m=Math.max(0,Number(document.getElementById('setMinutes').value)||0);
+    const s=Math.max(0,Math.min(59,Number(document.getElementById('setSeconds').value)||0));
+    send('TIME_SET',{seconds:m*60+s});
+  });
+
+  // Run / Pause / Reset
+  const runBtn=document.getElementById('runToggle');
+  runBtn.addEventListener('click',function(){
+    const pause=this.textContent==='Pausar';
+    send('RUNNING_SET',{running:!pause});
+    this.textContent=pause?'Reanudar':'Pausar';
+  });
+  document.getElementById('resetAll').addEventListener('click',()=>send('RESET_ALL',{}));
+
+  // Fases (prórroga suma +15m al tiempo que quede)
+  document.querySelectorAll('[data-phase]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const phase=btn.dataset.phase;
+      send('PHASE_SET',{phase});
+      if(phase==='PRORROGA1' || phase==='PRORROGA2'){
+        send('TIME_ADD',{seconds:900}); // suma 15m
+      }
+    });
+  });
+
+  // Cronómetro adelante
+  document.getElementById('countupOn').addEventListener('click',()=>send('COUNTUP_ENABLE',{enable:true}));
+  document.getElementById('countupOff').addEventListener('click',()=>send('COUNTUP_ENABLE',{enable:false}));
+  document.getElementById('countupStart').addEventListener('click',()=>send('COUNTUP_RUN',{run:true}));
+  document.getElementById('countupStop').addEventListener('click',()=>send('COUNTUP_RUN',{run:false}));
+  document.getElementById('countupReset').addEventListener('click',()=>send('COUNTUP_RESET',{}));
+
+  // Toggle combinado
+  const cupToggle=document.getElementById('countupToggle');
+  let cupRunning=false;
+  cupToggle.addEventListener('click',()=>{
+    send('COUNTUP_ENABLE',{enable:true});
+    cupRunning=!cupRunning;
+    send('COUNTUP_RUN',{run:cupRunning});
+    cupToggle.textContent = cupRunning ? 'Stop ↑' : 'Start ↑';
+    cupToggle.className  = cupRunning ? 'btn-gray' : 'btn-green';
+  });
+});
+</script>
+</body>
+</html>
