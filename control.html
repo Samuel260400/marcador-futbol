@@ -6,7 +6,7 @@
 <title>Control Partido</title>
 <style>
   body{margin:0;font-family:system-ui,sans-serif;background:#f5f5f5;color:#111;padding:2rem;box-sizing:border-box;}
-  fieldset{border:1px solid #ccc;border-radius:.5rem;margin-bottom:1.5rem;padding:1rem 1.2rem;}
+  fieldset{border:1px solid #ccc;border-radius:.5rem;margin-bottom:1.5rem;padding:1rem 1.2rem;background:#fff;}
   legend{padding:0 .4rem;font-weight:600;}
   .row{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin:.4rem 0;}
   label{font-size:.9rem;opacity:.8;}
@@ -58,6 +58,7 @@
     <label>Fecha/Hora inicio</label>
     <input id="startDT" type="datetime-local" />
     <button type="button" id="btnPrevia" class="btn-green">Previa (mostrar bloques)</button>
+    <button type="button" id="resetPre" class="btn-red">Reset cuenta atrás</button>
   </div>
   <div class="row">
     <button data-pre="600000">+10m</button>
@@ -90,7 +91,6 @@
   </div>
   <div class="row">
     <button type="button" id="runToggle" class="btn-green">Pausar</button>
-    <button type="button" id="resetAll" class="btn-red">Reset Total</button>
   </div>
 </fieldset>
 
@@ -120,53 +120,58 @@
   </div>
 </fieldset>
 
+<fieldset>
+  <legend>Sistema</legend>
+  <div class="row">
+    <button type="button" id="resetAll" class="btn-red">Reset TOTAL</button>
+  </div>
+</fieldset>
+
 <script>
 document.addEventListener('DOMContentLoaded',()=>{
 
   const channel = (()=>{ try{ return new BroadcastChannel('match-control'); }catch(e){ return null; } })();
-  const send = (type,payload)=>{
+
+  const send = (type,payload={})=>{
     if(channel) channel.postMessage({type,payload});
-    // espejo localStorage
-    if(type==='PRESET_START') localStorage.setItem('match_pre_ts', String(payload.ts));
-    if(type==='PRE_ADD'){ const prev=Number(localStorage.getItem('match_pre_ts')||0); localStorage.setItem('match_pre_ts', String(prev+payload.ms)); }
-    if(type==='PHASE_SET') localStorage.setItem('match_phase', payload.phase);
-    if(type==='SET_LOGOS'){
-      if((payload.homeLogo||'').length<500000) localStorage.setItem('match_homeLogo', payload.homeLogo||'');
-      if((payload.awayLogo||'').length<500000) localStorage.setItem('match_awayLogo', payload.awayLogo||'');
-    }
+    // "ping" mínimo por storage si el display no está abierto
     if(type==='RESET_ALL'){
+      localStorage.removeItem('match_state');
       localStorage.removeItem('match_pre_ts');
-      localStorage.removeItem('match_homeLogo');
-      localStorage.removeItem('match_awayLogo');
-      localStorage.setItem('match_phase','1H');
+    }
+    if(type==='RESET_PRE'){
+      const st=JSON.parse(localStorage.getItem('match_state')||'{}');
+      if(st){ st.startTimestamp=null; localStorage.setItem('match_state',JSON.stringify(st)); }
     }
   };
 
+  const $=id=>document.getElementById(id);
+
   // Equipos
-  document.getElementById('setNames').addEventListener('click',()=>{
-    const home=document.getElementById('homeName').value||'Local';
-    const away=document.getElementById('awayName').value||'Visitante';
-    send('SET_NAMES',{home,away});
+  $('setNames').addEventListener('click',()=>{
+    send('SET_NAMES',{
+      home:$('homeName').value||'Local',
+      away:$('awayName').value||'Visitante'
+    });
   });
 
   // Logos URL
-  document.getElementById('setLogos').addEventListener('click',()=>{
-    const homeLogo=document.getElementById('homeLogo').value.trim();
-    const awayLogo=document.getElementById('awayLogo').value.trim();
-    send('SET_LOGOS',{homeLogo,awayLogo});
+  $('setLogos').addEventListener('click',()=>{
+    send('SET_LOGOS',{
+      homeLogo:$('homeLogo').value.trim(),
+      awayLogo:$('awayLogo').value.trim()
+    });
   });
 
-  // Logos file -> base64
-  document.getElementById('uploadLogos').addEventListener('click',()=>{
-    const read = f => new Promise(res=>{
+  // Logos archivo -> base64
+  $('uploadLogos').addEventListener('click',()=>{
+    const read=f=>new Promise(res=>{
       if(!f) return res('');
-      const r=new FileReader();
-      r.onload=()=>res(r.result);
-      r.readAsDataURL(f);
+      const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(f);
     });
     Promise.all([
-      read(document.getElementById('homeFile').files[0]),
-      read(document.getElementById('awayFile').files[0])
+      read($('homeFile').files[0]),
+      read($('awayFile').files[0])
     ]).then(([homeLogo,awayLogo])=>{
       send('SET_LOGOS',{homeLogo,awayLogo});
     });
@@ -178,14 +183,16 @@ document.addEventListener('DOMContentLoaded',()=>{
   });
 
   // Previa
-  const startDT=document.getElementById('startDT');
-  document.getElementById('btnPrevia').addEventListener('click',()=>{
-    if(!startDT.value){ alert('Pon fecha y hora para la previa'); return; }
+  const startDT=$('startDT');
+  $('btnPrevia').addEventListener('click',()=>{
+    if(!startDT.value){ alert('Pon fecha y hora'); return; }
     const ts=new Date(startDT.value).getTime();
     if(isNaN(ts) || ts<=Date.now()){ alert('Hora pasada o inválida'); return; }
     send('PRESET_START',{ts});
     send('PHASE_SET',{phase:'PRE'});
   });
+
+  $('resetPre').addEventListener('click',()=>send('RESET_PRE',{}));
 
   // Ajustes previa
   document.querySelectorAll('[data-pre]').forEach(btn=>{
@@ -196,48 +203,49 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.querySelectorAll('[data-sec]').forEach(btn=>{
     btn.addEventListener('click',()=>send('TIME_ADD',{seconds:Number(btn.dataset.sec)}));
   });
-  document.getElementById('applyTime').addEventListener('click',()=>{
-    const m=Math.max(0,Number(document.getElementById('setMinutes').value)||0);
-    const s=Math.max(0,Math.min(59,Number(document.getElementById('setSeconds').value)||0));
+  $('applyTime').addEventListener('click',()=>{
+    const m=Math.max(0,Number($('setMinutes').value)||0);
+    const s=Math.max(0,Math.min(59,Number($('setSeconds').value)||0));
     send('TIME_SET',{seconds:m*60+s});
   });
 
-  // Run / Pause / Reset
-  const runBtn=document.getElementById('runToggle');
+  // Run / Pause
+  const runBtn=$('runToggle');
   runBtn.addEventListener('click',function(){
     const pause=this.textContent==='Pausar';
     send('RUNNING_SET',{running:!pause});
-    this.textContent=pause?'Reanudar':'Pausar';
+    this.textContent = pause ? 'Reanudar' : 'Pausar';
   });
-  document.getElementById('resetAll').addEventListener('click',()=>send('RESET_ALL',{}));
 
-  // Fases (prórroga suma +15m al tiempo que quede)
+  // Fases + prórroga suma 15m
   document.querySelectorAll('[data-phase]').forEach(btn=>{
     btn.addEventListener('click',()=>{
       const phase=btn.dataset.phase;
       send('PHASE_SET',{phase});
-      if(phase==='PRORROGA1' || phase==='PRORROGA2'){
-        send('TIME_ADD',{seconds:900}); // suma 15m
-      }
+      if(phase==='PRORROGA1' || phase==='PRORROGA2') send('TIME_ADD',{seconds:900});
     });
   });
 
   // Cronómetro adelante
-  document.getElementById('countupOn').addEventListener('click',()=>send('COUNTUP_ENABLE',{enable:true}));
-  document.getElementById('countupOff').addEventListener('click',()=>send('COUNTUP_ENABLE',{enable:false}));
-  document.getElementById('countupStart').addEventListener('click',()=>send('COUNTUP_RUN',{run:true}));
-  document.getElementById('countupStop').addEventListener('click',()=>send('COUNTUP_RUN',{run:false}));
-  document.getElementById('countupReset').addEventListener('click',()=>send('COUNTUP_RESET',{}));
+  $('countupOn').addEventListener('click',()=>send('COUNTUP_ENABLE',{enable:true}));
+  $('countupOff').addEventListener('click',()=>send('COUNTUP_ENABLE',{enable:false}));
+  $('countupStart').addEventListener('click',()=>send('COUNTUP_RUN',{run:true}));
+  $('countupStop').addEventListener('click',()=>send('COUNTUP_RUN',{run:false}));
+  $('countupReset').addEventListener('click',()=>send('COUNTUP_RESET',{}));
 
   // Toggle combinado
-  const cupToggle=document.getElementById('countupToggle');
-  let cupRunning=false;
+  const cupToggle=$('countupToggle'); let cupRunning=false;
   cupToggle.addEventListener('click',()=>{
     send('COUNTUP_ENABLE',{enable:true});
     cupRunning=!cupRunning;
     send('COUNTUP_RUN',{run:cupRunning});
     cupToggle.textContent = cupRunning ? 'Stop ↑' : 'Start ↑';
     cupToggle.className  = cupRunning ? 'btn-gray' : 'btn-green';
+  });
+
+  // Reset TOTAL
+  $('resetAll').addEventListener('click',()=>{
+    if(confirm('¿Restablecer TODO?')) send('RESET_ALL',{});
   });
 });
 </script>
